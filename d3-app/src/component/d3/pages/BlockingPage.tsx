@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useD3, AppLimit } from "../D3Content";
 import { Button } from "@/component/ui/button";
 import { Input } from "@/component/ui/input";
@@ -6,6 +6,8 @@ import { Switch } from "@/component/ui/switch";
 import { Plus, Check } from "lucide-react";
 import { toast } from "sonner";
 import { BackButton } from "../BackButton";
+
+import { Camera, Music, PlaySquare, Ghost, MessageCircle, MessageSquare, Users, Film, Smartphone } from "lucide-react";
 
 const DEFAULT_APPS = [
   { id: "instagram", name: "Instagram", emoji: "📷" },
@@ -18,15 +20,52 @@ const DEFAULT_APPS = [
   { id: "netflix", name: "Netflix", emoji: "🎬" },
 ];
 
+const renderAppIcon = (id: string) => {
+  switch (id) {
+    case "instagram": return <div className="h-9 w-9 rounded-xl bg-pink-500/10 flex items-center justify-center"><Camera className="h-5 w-5 text-pink-500" /></div>;
+    case "tiktok": return <div className="h-9 w-9 rounded-xl bg-indigo-500/10 flex items-center justify-center"><Music className="h-5 w-5 text-indigo-500" /></div>;
+    case "youtube": return <div className="h-9 w-9 rounded-xl bg-red-500/10 flex items-center justify-center"><PlaySquare className="h-5 w-5 text-red-500" /></div>;
+    case "snapchat": return <div className="h-9 w-9 rounded-xl bg-yellow-500/10 flex items-center justify-center"><Ghost className="h-5 w-5 text-yellow-600 dark:text-yellow-400" /></div>;
+    case "x": return <div className="h-9 w-9 rounded-xl bg-sky-500/10 flex items-center justify-center"><MessageCircle className="h-5 w-5 text-sky-500" /></div>;
+    case "reddit": return <div className="h-9 w-9 rounded-xl bg-orange-500/10 flex items-center justify-center"><MessageSquare className="h-5 w-5 text-orange-500" /></div>;
+    case "facebook": return <div className="h-9 w-9 rounded-xl bg-blue-500/10 flex items-center justify-center"><Users className="h-5 w-5 text-blue-500" /></div>;
+    case "netflix": return <div className="h-9 w-9 rounded-xl bg-red-500/10 flex items-center justify-center"><Film className="h-5 w-5 text-red-500" /></div>;
+    default: return <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center"><Smartphone className="h-5 w-5 text-primary" /></div>;
+  }
+};
+
 const MODES = [
   { id: "easy", name: "Easy", description: "Reminders only. Soft nudges." },
   { id: "moderate", name: "Moderate", description: "Task before unlock." },
   { id: "extreme", name: "Extreme", description: "Pomodoro required." },
 ] as const;
+const APPLY_COOLDOWN_MS = 60 * 60 * 1000;
+const LAST_APPLIED_KEY = "d3.blocking.lastAppliedAt";
 
 export const BlockingPage = () => {
   const { appLimits, setAppLimits, data, updateData } = useD3();
   const [custom, setCustom] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [lastAppliedAt, setLastAppliedAt] = useState<number>(() => {
+    const raw = localStorage.getItem(LAST_APPLIED_KEY);
+    const parsed = raw ? Number(raw) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const msUntilNextApply = Math.max(0, lastAppliedAt + APPLY_COOLDOWN_MS - now);
+  const canApply = msUntilNextApply <= 0;
+  const cooldownLabel = useMemo(() => {
+    if (canApply) return "";
+    const totalMinutes = Math.ceil(msUntilNextApply / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  }, [canApply, msUntilNextApply]);
 
   // Merge default + existing
   const knownIds = new Set(appLimits.map((a) => a.id));
@@ -63,8 +102,20 @@ export const BlockingPage = () => {
   };
 
   const save = () => {
+    if (!canApply) {
+      toast.error("Please wait before re-applying", {
+        description: `You can apply changes again in ${cooldownLabel}.`,
+      });
+      return;
+    }
+
+    const enabledCount = appLimits.filter((a) => a.enabled).length;
+    const timestamp = Date.now();
+    localStorage.setItem(LAST_APPLIED_KEY, String(timestamp));
+    setLastAppliedAt(timestamp);
+
     toast.success("Your control system is active", {
-      description: `${appLimits.filter((a) => a.enabled).length} apps under gentle watch.`,
+      description: `${enabledCount} apps under gentle watch in ${data.mode || "easy"} mode.`,
     });
   };
 
@@ -84,7 +135,7 @@ export const BlockingPage = () => {
           {presented.map((a) => (
             <div key={a.id} className={`rounded-2xl border p-4 transition-calm ${a.enabled ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}>
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-muted flex items-center justify-center">{a.emoji}</div>
+                {renderAppIcon(a.id)}
                 <div className="flex-1">
                   <div className="font-medium text-sm">{a.name}</div>
                   <div className="text-xs text-muted-foreground">{a.enabled ? `${a.dailyMin}m daily · ${a.sessionMin}m per session` : "Off"}</div>
@@ -134,7 +185,9 @@ export const BlockingPage = () => {
 
       {/* Save */}
       <div className="flex justify-end">
-        <Button variant="trust" size="lg" onClick={save}>Save & apply</Button>
+        <Button variant="trust" size="lg" onClick={save} disabled={!canApply}>
+          {canApply ? "Save & apply" : `Re-apply in ${cooldownLabel}`}
+        </Button>
       </div>
       <p className="text-xs text-muted-foreground italic text-center">You are always in control. You can adjust this anytime.</p>
     </main>

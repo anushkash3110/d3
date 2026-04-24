@@ -1,22 +1,44 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Button } from "@/component/ui/button";
-import { Bell, Home, Activity, ShieldCheck, BarChart3, Sparkles, Timer, Wind, Moon } from "lucide-react";
+import { Bell, Home, Activity, ShieldCheck, BarChart3, Sparkles, Timer, Wind, Moon, Brain } from "lucide-react";
 import { useD3 } from "./D3Content";
 import { D3Avatar } from "./Avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/component/ui/popover";
+import { interventionApi } from "@/lib/api";
 
 const navItems = [
   { to: "/dashboard", label: "Home", icon: Home },
   { to: "/activities", label: "Activities", icon: Activity },
   { to: "/blocking", label: "Block", icon: ShieldCheck },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/mirror", label: "My Mirror", icon: Brain },
 ];
 
 export const AppShell = ({ children }: { children: ReactNode }) => {
   const { mood, isNight, displayName, focusScore, screenTimeHours, completedActivities } = useD3();
   const navigate = useNavigate();
+  const [pendingInterventions, setPendingInterventions] = useState(0);
+
+  useEffect(() => {
+    if (!localStorage.getItem("token")) return;
+
+    const loadPending = async () => {
+      try {
+        const response = await interventionApi.pending();
+        setPendingInterventions(response.intervention ? 1 : 0);
+      } catch {
+        setPendingInterventions(0);
+      }
+    };
+
+    void loadPending();
+    const intervalId = setInterval(() => {
+      void loadPending();
+    }, 10000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   // Build gentle, contextual notifications
   const notifications: { icon: typeof Bell; title: string; body: string; action?: () => void; cta?: string }[] = [];
@@ -85,6 +107,12 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           </nav>
 
           <div className="flex items-center gap-2">
+            <div
+              className="text-[10px] px-2 py-1 rounded-full border border-border bg-card text-muted-foreground"
+              title="Pending interventions (debug)"
+            >
+              debug interventions: {pendingInterventions}
+            </div>
             {/* Notifications */}
             <Popover>
               <PopoverTrigger asChild>

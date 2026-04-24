@@ -5,6 +5,7 @@ import { useD3 } from "../D3Content";
 import { Pause, Play, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { BackButton } from "../BackButton";
+import { api } from "@/lib/api";
 
 export const FocusSessionPage = ({ minutes = 25 }: { minutes?: number }) => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ export const FocusSessionPage = ({ minutes = 25 }: { minutes?: number }) => {
   const [seconds, setSeconds] = useState(minutes * 60);
   const [running, setRunning] = useState(true);
   const [completed, setCompleted] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Moderate/extreme mode requires task-before-unlock
   const requiresIntent = data.mode === "moderate" || data.mode === "extreme";
@@ -26,11 +28,27 @@ export const FocusSessionPage = ({ minutes = 25 }: { minutes?: number }) => {
 
   useEffect(() => {
     if (started && seconds === 0 && !completed) {
-      setCompleted(true);
-      addFocusSession();
-      toast.success("Session complete", { description: "You returned to yourself. Beautiful work." });
+      const completeSession = async () => {
+        try {
+          if (sessionId) {
+            await api.patch(`/focus-sessions/${sessionId}`, {
+              status: "completed",
+              completedMinutes: minutes,
+              endedAt: new Date().toISOString(),
+            });
+          }
+          setCompleted(true);
+          addFocusSession();
+          toast.success("Session complete", { description: "You returned to yourself. Beautiful work." });
+        } catch (error) {
+          console.error("Failed to complete focus session:", error);
+          toast.error("Could not sync session", { description: "Please try again." });
+        }
+      };
+
+      void completeSession();
     }
-  }, [seconds, started, completed, addFocusSession]);
+  }, [seconds, started, completed, addFocusSession, sessionId, minutes]);
 
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -66,7 +84,21 @@ export const FocusSessionPage = ({ minutes = 25 }: { minutes?: number }) => {
           size="xl"
           className="w-full"
           disabled={requiresIntent && !intent.trim()}
-          onClick={() => setStarted(true)}
+          onClick={async () => {
+            try {
+              const response = await api.post<{ session: { _id: string } }>("/focus-sessions", {
+                title: intent.trim() || "Focus Session",
+                plannedMinutes: minutes,
+                status: "in_progress",
+                startedAt: new Date().toISOString(),
+              });
+              setSessionId(response.session._id);
+              setStarted(true);
+            } catch (error) {
+              console.error("Failed to create focus session:", error);
+              toast.error("Could not start session", { description: "Please login and try again." });
+            }
+          }}
         >
           Begin focus
         </Button>
@@ -124,7 +156,27 @@ export const FocusSessionPage = ({ minutes = 25 }: { minutes?: number }) => {
         <Button variant="soft" size="lg" onClick={() => setRunning((r) => !r)}>
           {running ? <><Pause className="h-4 w-4" /> Pause</> : <><Play className="h-4 w-4" /> Resume</>}
         </Button>
-        <Button variant="whisper" size="lg" onClick={() => navigate("/dashboard")}>End session</Button>
+        <Button
+          variant="whisper"
+          size="lg"
+          onClick={async () => {
+            try {
+              if (sessionId) {
+                await api.patch(`/focus-sessions/${sessionId}`, {
+                  status: "cancelled",
+                  completedMinutes: Math.floor((minutes * 60 - seconds) / 60),
+                  endedAt: new Date().toISOString(),
+                });
+              }
+            } catch (error) {
+              console.error("Failed to cancel focus session:", error);
+            } finally {
+              navigate("/dashboard");
+            }
+          }}
+        >
+          End session
+        </Button>
       </div>
     </main>
   );

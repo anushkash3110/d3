@@ -4,23 +4,81 @@ import { D3Avatar, moodLabel } from "../Avatar";
 import { FocusRing } from "../FocusRing";
 import { Button } from "@/component/ui/button";
 import { Settings2, RotateCcw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/component/ui/input";
 import { toast } from "sonner";
 import { BackButton } from "../BackButton";
+import { api, scoreApi, type ScoreOverview } from "@/lib/api";
 
 export const ProfilePage = () => {
-  const { data, focusScore, screenTimeHours, mood, completedActivities, focusSessionsCompleted, breaksTaken, displayName, setDisplayName } = useD3();
+  const { data, updateData, focusScore, screenTimeHours, mood, completedActivities, focusSessionsCompleted, breaksTaken, displayName, setDisplayName } = useD3();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(displayName);
+  const [scoreOverview, setScoreOverview] = useState<ScoreOverview | null>(null);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const [response, scoreResponse] = await Promise.all([
+          api.get<{
+            profile?: {
+              ageRange?: string;
+              distractionTriggers?: string[];
+              sleepTime?: string;
+              mostDistractingApps?: string[];
+            };
+          }>("/onboarding"),
+          scoreApi.getOverview(),
+        ]);
+
+        updateData({
+          ageGroup: response.profile?.ageRange || data.ageGroup,
+          sleep: response.profile?.sleepTime || data.sleep,
+          apps:
+            response.profile?.distractionTriggers?.length
+              ? response.profile.distractionTriggers
+              : response.profile?.mostDistractingApps?.length
+                ? response.profile.mostDistractingApps
+                : data.apps,
+        });
+        if (displayName === "Friend" && data.name) {
+          setDisplayName(data.name);
+          setName(data.name);
+        }
+        setScoreOverview(scoreResponse);
+      } catch (error) {
+        console.error("Failed to fetch profile:", error);
+      }
+    };
+
+    void loadProfile();
+    // Fetch once on mount; API helper handles auth redirects.
+  }, []);
 
   const heavy = ["6 – 8 hours", "More than 8 hours"].includes(data.screenTime);
   const addiction = heavy ? "High" : "Moderate";
 
   const resetOnboarding = () => {
-    try { localStorage.removeItem("d3.onboarding.v1"); } catch { /* ignore */ }
-    window.location.href = "/";
+    try {
+      localStorage.removeItem("d3.onboarding.v1");
+      localStorage.removeItem("token");
+      window.dispatchEvent(new Event("d3-auth-changed"));
+    } catch {
+      // ignore
+    }
+    navigate("/", { replace: true });
+  };
+
+  const logout = () => {
+    try {
+      localStorage.removeItem("token");
+      localStorage.removeItem("d3.onboarding.v1");
+      window.dispatchEvent(new Event("d3-auth-changed"));
+    } catch {
+      // ignore
+    }
+    navigate("/", { replace: true });
   };
 
   return (
@@ -63,8 +121,8 @@ export const ProfilePage = () => {
           <Stat label="Sleep" value={data.sleep || "—"} />
           <Stat label="Activities" value={completedActivities.length.toString()} />
           <Stat label="Sessions" value={focusSessionsCompleted.toString()} />
-          <Stat label="Breaks" value={breaksTaken.toString()} />
-          <Stat label="Driver" value={data.scrollReason || "—"} />
+          <Stat label="Streak" value={`${scoreOverview?.streak ?? 0}d`} />
+          <Stat label="Level" value={scoreOverview?.level || data.scrollReason || "—"} />
         </div>
       </section>
 
@@ -74,9 +132,14 @@ export const ProfilePage = () => {
           <div className="font-medium text-sm">Reset onboarding</div>
           <div className="text-xs text-muted-foreground">Clear your answers and start over.</div>
         </div>
-        <Button variant="whisper" size="sm" onClick={resetOnboarding}>
-          <RotateCcw className="h-4 w-4" /> Reset
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="whisper" size="sm" onClick={resetOnboarding}>
+            <RotateCcw className="h-4 w-4" /> Reset
+          </Button>
+          <Button variant="soft" size="sm" onClick={logout}>
+            Logout
+          </Button>
+        </div>
       </section>
     </main>
   );

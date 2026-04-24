@@ -1,16 +1,15 @@
 import { cn } from "@/lib/utils";
+import { BrainCircuit } from "lucide-react";
 
 export const Logo = ({ className, withWord = true }: { className?: string; withWord?: boolean }) => (
   <div className={cn("flex items-center gap-2.5", className)}>
-    <div className="relative h-9 w-9">
-      <div className="absolute inset-0 rounded-full bg-gradient-sky shadow-soft" />
-      <div className="absolute inset-[7px] rounded-full bg-card/80 backdrop-blur-sm" />
-      <div className="absolute inset-[14px] rounded-full bg-secondary breathe" />
+    <div className="flex items-center justify-center h-10 w-10 shrink-0 rounded-xl bg-primary text-primary-foreground shadow-sm">
+      <BrainCircuit className="h-6 w-6" />
     </div>
     {withWord && (
       <div className="leading-none">
-        <div className="font-display text-xl tracking-tight">D3</div>
-        <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mt-0.5">Detox</div>
+        <div className="font-display text-2xl tracking-tight text-foreground font-bold">D3</div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary mt-0.5">Detox</div>
       </div>
     )}
   </div>

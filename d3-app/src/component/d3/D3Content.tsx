@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { OnboardingData } from "./Onboarding";
+import { api } from "@/lib/api";
 
 export type AvatarMood = "happy" | "calm" | "tired";
 
@@ -99,9 +100,30 @@ export const D3Provider = ({ initial, children }: { initial: OnboardingData; chi
 
   const updateData = (patch: Partial<OnboardingData>) => setData((d) => ({ ...d, ...patch }));
   const toggleActivity = (id: string) =>
-    setCompleted((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+    setCompleted((c) => {
+      const next = c.includes(id) ? c.filter((x) => x !== id) : [...c, id];
+      if (localStorage.getItem("token")) {
+        void api.post("/activities/toggle", { activityId: id }).catch((error) => {
+          console.error("Failed to sync activity toggle:", error);
+        });
+      }
+      return next;
+    });
   const addFocusSession = () => setFocus((f) => f + 1);
   const addBreak = () => setBreaks((b) => b + 1);
+
+  useEffect(() => {
+    if (!localStorage.getItem("token")) return;
+    const bootstrapActivities = async () => {
+      try {
+        const response = await api.get<{ completedActivities: string[] }>("/activities");
+        setCompleted(response.completedActivities || []);
+      } catch (error) {
+        console.error("Failed to load activities:", error);
+      }
+    };
+    void bootstrapActivities();
+  }, []);
 
   return (
     <Ctx.Provider

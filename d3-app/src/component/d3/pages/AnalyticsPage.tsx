@@ -1,6 +1,8 @@
+import { useEffect, useMemo, useState } from "react";
 import { useD3 } from "../D3Content";
 import { FocusRing } from "../FocusRing";
 import { BackButton } from "../BackButton";
+import { api, scoreApi, type ScoreHistoryEntry, type ScoreOverview } from "@/lib/api";
 
 const PALETTE = [
   "hsl(210 60% 70%)",
@@ -16,18 +18,117 @@ const PALETTE = [
 export const AnalyticsPage = () => {
   const { data, screenTimeHours, focusScore, completedActivities, focusSessionsCompleted } = useD3();
 
-  const apps = data.apps.length ? data.apps : ["instagram", "youtube", "others"];
-  const weights = apps.map((_, i) => Math.max(0.5, 1 - i * 0.18));
-  const totalW = weights.reduce((a, b) => a + b, 0);
-  const slices = apps.map((id, i) => ({
-    label: id.charAt(0).toUpperCase() + id.slice(1),
-    pct: Math.round((weights[i] / totalW) * 100),
-    color: PALETTE[i % PALETTE.length],
-  }));
+  const [serverAnalytics, setServerAnalytics] = useState<null | {
+    demoAnalytics?: {
+      focusScore?: number;
+      appBreakdown?: Array<{ label: string; pct: number }>;
+      weeklyFocus?: Array<{ day: string; score: number }>;
+      metrics?: { sessions?: number; activities?: number; hours?: number };
+    };
+  }>(null);
+  const [scoreOverview, setScoreOverview] = useState<ScoreOverview | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
 
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const today = (new Date().getDay() + 6) % 7;
-  const series = [40, 65, 50, 78, 45, 30, 60].map((b, i) => (i === today ? Math.max(b, focusScore) : b));
+  const normalizedWeeklyHistory = useMemo(() => {
+    const byDate = new Map<string, ScoreHistoryEntry>();
+    for (const entry of scoreHistory) {
+      byDate.set(entry.date, entry);
+    }
+
+    const today = new Date();
+    const days: ScoreHistoryEntry[] = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - offset);
+      const key = d.toISOString().slice(0, 10);
+      const existing = byDate.get(key);
+      days.push(existing || { date: key, score: 0, delta: 0, reason: "No data" });
+    }
+    return days;
+  }, [scoreHistory]);
+
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      try {
+        const [response, overviewResponse, historyResponse] = await Promise.all([
+          api.get<{
+            demoAnalytics?: {
+              focusScore?: number;
+              appBreakdown?: Array<{ label: string; pct: number }>;
+              weeklyFocus?: Array<{ day: string; score: number }>;
+              metrics?: { sessions?: number; activities?: number; hours?: number };
+            };
+          }>("/dashboard/analytics"),
+          scoreApi.getOverview(),
+          scoreApi.getHistory(7),
+        ]);
+        setServerAnalytics(response);
+        setScoreOverview(overviewResponse);
+        setScoreHistory(historyResponse.history || []);
+      } catch (error) {
+        console.error("Failed to load analytics:", error);
+      }
+    };
+
+    void loadAnalytics();
+  }, []);
+
+  const slices = useMemo(() => {
+    const seededSlices = serverAnalytics?.demoAnalytics?.appBreakdown;
+    if (seededSlices && seededSlices.length > 0) {
+      return seededSlices.map((slice, i) => ({
+        label: slice.label,
+        pct: slice.pct,
+        color: PALETTE[i % PALETTE.length],
+      }));
+    }
+
+    const apps = data.apps.length ? data.apps : ["instagram", "youtube", "others"];
+    const weights = apps.map((_, i) => Math.max(0.5, 1 - i * 0.18));
+    const totalW = weights.reduce((a, b) => a + b, 0);
+    return apps.map((id, i) => ({
+      label: id.charAt(0).toUpperCase() + id.slice(1),
+      pct: Math.round((weights[i] / totalW) * 100),
+      color: PALETTE[i % PALETTE.length],
+    }));
+  }, [data.apps, serverAnalytics]);
+
+  const weeklyFocus = useMemo(() => {
+    if (normalizedWeeklyHistory.length > 0) {
+      const scores = normalizedWeeklyHistory.map((entry) => entry.score);
+      const minScore = Math.min(...scores);
+      const maxScore = Math.max(...scores);
+      const range = Math.max(1, maxScore - minScore);
+      return normalizedWeeklyHistory.map((entry) => ({
+        day: new Date(entry.date).toLocaleDateString("en-US", { weekday: "short" }),
+        score: Math.round(((entry.score - minScore) / range) * 100),
+      }));
+    }
+
+    const seeded = serverAnalytics?.demoAnalytics?.weeklyFocus;
+    if (seeded && seeded.length > 0) {
+      const scores = seeded.map((entry) => entry.score);
+      const minScore = Math.min(...scores);
+      const maxScore = Math.max(...scores);
+      const range = Math.max(1, maxScore - minScore);
+
+      return seeded.map((entry) => ({
+        day: entry.day,
+        // Normalize last-7 scores so variation is visible in the bars.
+        score: Math.round(((entry.score - minScore) / range) * 100),
+      }));
+    }
+
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const today = (new Date().getDay() + 6) % 7;
+    const series = [40, 65, 50, 78, 45, 30, 60].map((b, i) => (i === today ? Math.max(b, focusScore) : b));
+    return days.map((day, i) => ({ day, score: series[i] }));
+  }, [focusScore, serverAnalytics, normalizedWeeklyHistory]);
+
+  const uiFocusScore = scoreOverview ? Math.round(scoreOverview.currentScore / 10) : serverAnalytics?.demoAnalytics?.focusScore ?? focusScore;
+  const uiSessions = serverAnalytics?.demoAnalytics?.metrics?.sessions ?? focusSessionsCompleted;
+  const uiActivities = serverAnalytics?.demoAnalytics?.metrics?.activities ?? completedActivities.length;
+  const uiHours = serverAnalytics?.demoAnalytics?.metrics?.hours ?? Number(screenTimeHours.toFixed(1));
 
   return (
     <main className="max-w-5xl mx-auto px-6 md:px-10 py-10 space-y-6">
@@ -55,11 +156,11 @@ export const AnalyticsPage = () => {
         </div>
 
         <div className="rounded-2xl bg-card border border-border p-6 flex flex-col items-center justify-center">
-          <FocusRing value={focusScore} size={170} label="Focus score" />
+          <FocusRing value={uiFocusScore} size={170} label="Focus score" />
           <div className="mt-5 grid grid-cols-3 gap-3 w-full">
-            <MiniStat label="Sessions" value={focusSessionsCompleted} />
-            <MiniStat label="Activities" value={completedActivities.length} />
-            <MiniStat label="Hours" value={screenTimeHours.toFixed(1)} />
+            <MiniStat label="Sessions" value={uiSessions} />
+            <MiniStat label="Activities" value={uiActivities} />
+            <MiniStat label="Hours" value={uiHours.toFixed(1)} />
           </div>
         </div>
       </section>
@@ -67,13 +168,15 @@ export const AnalyticsPage = () => {
       <section className="rounded-2xl bg-card border border-border p-6">
         <div className="text-sm font-medium mb-4">Weekly focus</div>
         <div className="flex items-end gap-3 h-32">
-          {series.map((b, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-2">
-              <div
-                className={`w-full rounded-t-md transition-calm ${i === today ? "bg-primary" : "bg-primary-soft/70"}`}
-                style={{ height: `${b}%` }}
-              />
-              <div className="text-xs text-muted-foreground">{days[i]}</div>
+          {weeklyFocus.map((item) => (
+            <div key={item.day} className="flex-1 h-full flex flex-col items-center gap-2">
+              <div className="w-full flex-1 flex items-end">
+                <div
+                  className="w-full rounded-t-md transition-calm bg-primary"
+                  style={{ height: `${Math.max(8, item.score)}%` }}
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">{item.day}</div>
             </div>
           ))}
         </div>

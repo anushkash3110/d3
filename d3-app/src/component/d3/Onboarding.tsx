@@ -3,11 +3,14 @@ import { Button } from "@/component/ui/button";
 import { Input } from "@/component/ui/input";
 import { ChoiceCard } from "./ChoiceCard";
 import { useEffect, useState } from "react";
-import { ArrowRight, Mail, User } from "lucide-react";
+import { ArrowRight, Lock, Mail, User } from "lucide-react";
+import { api } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 export type OnboardingData = {
   name: string;
   email: string;
+  password: string;
   ageGroup: string;
   screenTime: string;
   sleep: string;
@@ -20,7 +23,7 @@ export type OnboardingData = {
 };
 
 const empty: OnboardingData = {
-  name: "", email: "",
+  name: "", email: "", password: "",
   ageGroup: "", screenTime: "", sleep: "", scrollTime: "", scrollReason: "",
   feeling: "", apps: [], customApp: "", mode: ""
 };
@@ -77,6 +80,9 @@ const MODES = [
 
 export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) => void }) => {
   const [data, setData] = useState<OnboardingData>(empty);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signup");
+  const [authError, setAuthError] = useState("");
+  const navigate = useNavigate();
   // Steps: 0 brand intro, 1 name+email, 2..7 questions, 8 permission, 9 apps, 10 mode, 11 result
   const [step, setStep] = useState(0);
   const TOTAL = 11;
@@ -86,6 +92,118 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
 
   const update = <K extends keyof OnboardingData>(k: K, v: OnboardingData[K]) =>
     setData(d => ({ ...d, [k]: v }));
+
+  const normalizeApps = (apps: string[] = []) =>
+    apps.map((item) => item.toLowerCase().replace(/\s*\/\s*/g, "-").replace(/\s+/g, ""));
+
+  const mapHoursToRange = (hours?: number) => {
+    if (!hours) return "";
+    if (hours < 2) return "Less than 2 hours";
+    if (hours <= 4) return "2 – 4 hours";
+    if (hours <= 6) return "4 – 6 hours";
+    if (hours <= 8) return "6 – 8 hours";
+    return "More than 8 hours";
+  };
+
+  const completeAuthFlow = async (mode: "signin" | "signup") => {
+    setAuthError("");
+    let token: string | null = null;
+
+    if (mode === "signin") {
+      const loginResponse = await api.post<{ token: string; user?: { name?: string } }>(
+        "/auth/login",
+        { email: data.email, password: data.password },
+        { requireAuth: false }
+      );
+      token = loginResponse.token;
+      if (!token) {
+        throw new Error("Unable to retrieve token from auth API.");
+      }
+
+      // Persist token before any authenticated fetch (like /onboarding).
+      localStorage.setItem("token", token);
+      const userName = loginResponse.user?.name || "";
+
+      const profileResponse = await api
+        .get<{
+          profile?: {
+            ageRange?: string;
+            distractionTriggers?: string[];
+            dailyScreenTimeHours?: number;
+            mostDistractingApps?: string[];
+            sleepTime?: string;
+          };
+        }>("/onboarding")
+        .catch(
+          () =>
+            ({
+              profile: undefined,
+            }) as {
+              profile?: {
+                ageRange?: string;
+                distractionTriggers?: string[];
+                dailyScreenTimeHours?: number;
+                mostDistractingApps?: string[];
+                sleepTime?: string;
+              };
+            }
+        );
+
+      const profile = profileResponse.profile;
+      const hydratedData: OnboardingData = {
+        ...empty,
+        name: userName,
+        email: data.email,
+        password: data.password,
+        ageGroup: profile.ageRange || "",
+        screenTime: mapHoursToRange(profile.dailyScreenTimeHours),
+        sleep: profile.sleepTime || "",
+        apps: normalizeApps(profile.distractionTriggers || profile.mostDistractingApps || []),
+      };
+      onComplete(hydratedData);
+    } else {
+      const registerResponse = await api.post<{ token?: string }>(
+        "/auth/register",
+        { name: data.name, email: data.email, password: data.password },
+        { requireAuth: false }
+      );
+      token = registerResponse.token || null;
+
+      if (!token) {
+        const loginAfterRegister = await api.post<{ token: string }>(
+          "/auth/login",
+          { email: data.email, password: data.password },
+          { requireAuth: false }
+        );
+        token = loginAfterRegister.token;
+      }
+    }
+
+    if (!token) {
+      throw new Error("Unable to retrieve token from auth API.");
+    }
+
+    // Sign-in already stored token before profile hydration.
+    if (mode !== "signin") {
+      localStorage.setItem("token", token);
+    }
+    window.dispatchEvent(new Event("d3-auth-changed"));
+    const persistedToken = localStorage.getItem("token");
+    if (!persistedToken) {
+      throw new Error("Token was not persisted to localStorage.");
+    }
+
+    if (mode === "signup") {
+      await api.put("/onboarding", data);
+      onComplete(data);
+    }
+
+    try {
+      navigate("/dashboard");
+    } catch {
+      window.location.href = "/dashboard";
+    }
+  };
 
   // Step 0: Brand intro — logo + name + Get Started
   if (step === 0) {
@@ -129,7 +247,7 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
             className="text-sm tracking-[0.4em] text-muted-foreground/70 mb-12 opacity-0 animate-[fade-in_0.8s_ease-out_forwards]"
             style={{ animationDelay: "2.4s" }}
           >
-            D · 3
+            D.3
           </div>
 
           <div
@@ -148,7 +266,14 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
   // Step 1: Explanation + name + email
   if (step === 1) {
     const emailValid = !data.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email);
-    const canContinue = data.name.trim().length >= 2 && data.email.trim().length > 0 && emailValid;
+    const canContinue = authMode === "signup"
+      ? data.name.trim().length >= 2 &&
+      data.email.trim().length > 0 &&
+      data.password.trim().length >= 6 &&
+      emailValid
+      : data.email.trim().length > 0 &&
+      data.password.trim().length >= 6 &&
+      emailValid;
 
     return (
       <div className="min-h-screen bg-gradient-dawn flex items-center justify-center px-6 py-16">
@@ -167,16 +292,44 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
           </div>
 
           <div className="space-y-3 text-left">
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={data.name}
-                onChange={e => update("name", e.target.value)}
-                placeholder="Your name"
-                maxLength={60}
-                className="pl-10 h-12 rounded-xl bg-card border-border"
-              />
+            <div className="rounded-xl bg-muted p-1 grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("signin");
+                  setAuthError("");
+                }}
+                className={`h-10 rounded-lg text-sm transition-calm ${
+                  authMode === "signin" ? "bg-card shadow-soft font-medium" : "text-muted-foreground"
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("signup");
+                  setAuthError("");
+                }}
+                className={`h-10 rounded-lg text-sm transition-calm ${
+                  authMode === "signup" ? "bg-card shadow-soft font-medium" : "text-muted-foreground"
+                }`}
+              >
+                Create Account
+              </button>
             </div>
+            {authMode === "signup" && (
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={data.name}
+                  onChange={e => update("name", e.target.value)}
+                  placeholder="Your name"
+                  maxLength={60}
+                  className="pl-10 h-12 rounded-xl bg-card border-border"
+                />
+              </div>
+            )}
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -188,14 +341,55 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
                 className="pl-10 h-12 rounded-xl bg-card border-border"
               />
             </div>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="password"
+                value={data.password}
+                onChange={e => update("password", e.target.value)}
+                placeholder="Password (min 6 characters)"
+                minLength={6}
+                maxLength={120}
+                className="pl-10 h-12 rounded-xl bg-card border-border"
+              />
+            </div>
             {!emailValid && (
               <p className="text-xs text-destructive px-1">Please enter a valid email address.</p>
+            )}
+            {data.password && data.password.trim().length < 6 && (
+              <p className="text-xs text-destructive px-1">Password must be at least 6 characters.</p>
+            )}
+            {authMode === "signup" && data.name && data.name.trim().length < 2 && (
+              <p className="text-xs text-destructive px-1">Name must be at least 2 characters.</p>
+            )}
+            {authError && (
+              <p className="text-xs text-destructive px-1">{authError}</p>
             )}
 
             <div className="flex items-center gap-3 pt-2">
               <Button variant="whisper" size="lg" onClick={back}>Back</Button>
-              <Button variant="trust" size="lg" onClick={next} disabled={!canContinue} className="flex-1">
-                Continue <ArrowRight className="h-4 w-4" />
+              <Button
+                variant="trust"
+                size="lg"
+                onClick={async () => {
+                  if (authMode === "signin") {
+                    try {
+                      await completeAuthFlow("signin");
+                    } catch (error) {
+                      if (error instanceof Error) {
+                        setAuthError(error.message);
+                      } else {
+                        setAuthError("Authentication failed. Please try again.");
+                      }
+                    }
+                    return;
+                  }
+                  next();
+                }}
+                disabled={!canContinue}
+                className="flex-1"
+              >
+                {authMode === "signin" ? "Sign In" : "Continue"} <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-xs text-muted-foreground text-center italic pt-2">
@@ -349,11 +543,10 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
               <button
                 key={m.id}
                 onClick={() => update("mode", m.id)}
-                className={`text-left rounded-2xl border p-6 transition-calm ${
-                  selected
-                    ? "border-primary/60 bg-card shadow-rest"
-                    : "border-border bg-card hover:border-primary/30 hover:shadow-soft"
-                }`}
+                className={`text-left rounded-2xl border p-6 transition-calm ${selected
+                  ? "border-primary/60 bg-card shadow-rest"
+                  : "border-border bg-card hover:border-primary/30 hover:shadow-soft"
+                  }`}
               >
                 <div className="flex items-start gap-4">
                   <div className={`h-12 w-12 rounded-2xl ${m.color} flex items-center justify-center shrink-0`}>
@@ -431,7 +624,20 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
             </div>
           </div>
 
-          <Button variant="trust" size="xl" className="w-full" onClick={() => onComplete(data)}>
+          <Button variant="trust" size="xl" className="w-full"
+            onClick={async () => {
+              try {
+                await completeAuthFlow("signup");
+              } catch (error) {
+                console.error("Onboarding/auth flow failed:", error);
+                if (error instanceof Error) {
+                  setAuthError(error.message);
+                } else {
+                  setAuthError("Authentication failed. Please try again.");
+                }
+              }
+            }}
+          >
             Enter your calm space <ArrowRight />
           </Button>
           <p className="text-xs text-muted-foreground text-center mt-4 italic">

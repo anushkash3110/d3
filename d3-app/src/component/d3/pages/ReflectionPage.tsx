@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/component/ui/button";
 import { useD3 } from "../D3Content";
 import { ArrowRight, RotateCcw } from "lucide-react";
 import { BackButton } from "../BackButton";
+import { api } from "@/lib/api";
 
 const QUESTIONS = [
   {
@@ -66,6 +67,18 @@ export const ReflectionPage = () => {
   const [answers, setAnswers] = useState<number[]>([]);
   const [done, setDone] = useState(false);
 
+  useEffect(() => {
+    const loadJournalEntries = async () => {
+      try {
+        await api.get<{ entries: Array<{ _id: string }> }>("/journal");
+      } catch (error) {
+        console.error("Failed to fetch journal entries:", error);
+      }
+    };
+
+    void loadJournalEntries();
+  }, []);
+
   const max = QUESTIONS.length * 3;
   const total = answers.reduce((a, b) => a + b, 0);
 
@@ -73,9 +86,22 @@ export const ReflectionPage = () => {
     const next = [...answers, score];
     setAnswers(next);
     if (step + 1 >= QUESTIONS.length) {
-      const result = interpret(next.reduce((a, b) => a + b, 0), max);
-      setReflectionResult(result.title);
-      setDone(true);
+      const finishReflection = async () => {
+        const result = interpret(next.reduce((a, b) => a + b, 0), max);
+        try {
+          await api.post("/journal", {
+            reflection: `${result.title}. ${result.body}`,
+            moodScore: Math.max(1, Math.min(10, 10 - Math.round((next.reduce((a, b) => a + b, 0) / max) * 9))),
+            wins: ["Completed D3 reflection"],
+          });
+        } catch (error) {
+          console.error("Failed to save reflection entry:", error);
+        }
+        setReflectionResult(result.title);
+        setDone(true);
+      };
+
+      void finishReflection();
     } else {
       setStep((s) => s + 1);
     }
