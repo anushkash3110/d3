@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Onboarding, OnboardingData } from "@/component/d3/Onboarding";
 import { D3Provider } from "@/component/d3/D3Content";
@@ -42,6 +42,45 @@ const MODE_INTERACTION_THRESHOLD: Record<"easy" | "moderate" | "extreme", number
   easy: 35,
   moderate: 20,
   extreme: 12,
+};
+
+const useActivityMonitor = (onTrigger: () => void, isEnabled: boolean) => {
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    let sessionTimer: NodeJS.Timeout | null = null;
+    let idleTimer: NodeJS.Timeout | null = null;
+
+    const handleInteraction = () => {
+      // Clear idle timer since the user is interacting
+      if (idleTimer) clearTimeout(idleTimer);
+
+      // Start a 5-minute continuous activity timer if not already running
+      if (!sessionTimer) {
+        sessionTimer = setTimeout(() => {
+          onTrigger();
+          sessionTimer = null;
+        }, 300000); // 5 minutes
+      }
+
+      // Reset the continuous timer if the user is inactive for 60 seconds
+      idleTimer = setTimeout(() => {
+        if (sessionTimer) {
+          clearTimeout(sessionTimer);
+          sessionTimer = null;
+        }
+      }, 60000);
+    };
+
+    const events = ["mousemove", "scroll", "keydown", "click"];
+    events.forEach((e) => window.addEventListener(e, handleInteraction, { passive: true }));
+
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, handleInteraction));
+      if (sessionTimer) clearTimeout(sessionTimer);
+      if (idleTimer) clearTimeout(idleTimer);
+    };
+  }, [onTrigger, isEnabled]);
 };
 
 const InnerApp = () => {
@@ -134,45 +173,26 @@ const InnerApp = () => {
     return () => clearInterval(intervalId);
   }, [token]);
 
-  useEffect(() => {
-    if (!token) return;
-    if (path === "/focus") {
-      interactionCountRef.current = 0;
-      return;
-    }
-    if (!isDistractingRoute || !hasActiveBlocking) return;
+  const onShowIntervention = useCallback(() => {
+    if (intervene) return;
+    void interventionApi
+      .trigger({
+        appName: path.replace("/", "") || "screen",
+        continuousMinutes: Math.max(1, Math.round(todayScreenMinutes)),
+      })
+      .then((payload) => {
+        setActiveIntervention(payload);
+        setIntervene(true);
+      })
+      .catch(() => {
+        setIntervene(true);
+      });
+  }, [intervene, path, todayScreenMinutes]);
 
-    const handleInteraction = () => {
-      interactionCountRef.current += 1;
-      if (interactionCountRef.current >= interactionThreshold && !intervene) {
-        void interventionApi
-          .trigger({
-            appName: path.replace("/", "") || "screen",
-            continuousMinutes: Math.max(1, Math.round(todayScreenMinutes)),
-          })
-          .then((payload) => {
-            setActiveIntervention(payload);
-            setIntervene(true);
-          })
-          .catch(() => {
-            setIntervene(true);
-          });
-        interactionCountRef.current = 0;
-      }
-    };
-
-    window.addEventListener("click", handleInteraction);
-    window.addEventListener("scroll", handleInteraction, { passive: true });
-    window.addEventListener("keydown", handleInteraction);
-    window.addEventListener("touchstart", handleInteraction, { passive: true });
-
-    return () => {
-      window.removeEventListener("click", handleInteraction);
-      window.removeEventListener("scroll", handleInteraction);
-      window.removeEventListener("keydown", handleInteraction);
-      window.removeEventListener("touchstart", handleInteraction);
-    };
-  }, [token, path, intervene, isDistractingRoute, hasActiveBlocking, interactionThreshold, todayScreenMinutes]);
+  useActivityMonitor(
+    onShowIntervention,
+    !!token && isDistractingRoute && hasActiveBlocking && path !== "/focus"
+  );
 
   return (
     <AppShell>
