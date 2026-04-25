@@ -113,6 +113,7 @@ export type InterventionPayload = {
   task: InterventionTask;
   message: string;
   pomodoroMinutes: number;
+  triggerApp?: string;
 };
 
 export type InterventionDoc = {

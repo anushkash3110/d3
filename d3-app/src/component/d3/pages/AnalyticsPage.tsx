@@ -18,14 +18,7 @@ const PALETTE = [
 export const AnalyticsPage = () => {
   const { data, screenTimeHours, focusScore, completedActivities, focusSessionsCompleted } = useD3();
 
-  const [serverAnalytics, setServerAnalytics] = useState<null | {
-    demoAnalytics?: {
-      focusScore?: number;
-      appBreakdown?: Array<{ label: string; pct: number }>;
-      weeklyFocus?: Array<{ day: string; score: number }>;
-      metrics?: { sessions?: number; activities?: number; hours?: number };
-    };
-  }>(null);
+
   const [scoreOverview, setScoreOverview] = useState<ScoreOverview | null>(null);
   const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
 
@@ -50,19 +43,10 @@ export const AnalyticsPage = () => {
   useEffect(() => {
     const loadAnalytics = async () => {
       try {
-        const [response, overviewResponse, historyResponse] = await Promise.all([
-          api.get<{
-            demoAnalytics?: {
-              focusScore?: number;
-              appBreakdown?: Array<{ label: string; pct: number }>;
-              weeklyFocus?: Array<{ day: string; score: number }>;
-              metrics?: { sessions?: number; activities?: number; hours?: number };
-            };
-          }>("/dashboard/analytics"),
+        const [overviewResponse, historyResponse] = await Promise.all([
           scoreApi.getOverview(),
           scoreApi.getHistory(7),
         ]);
-        setServerAnalytics(response);
         setScoreOverview(overviewResponse);
         setScoreHistory(historyResponse.history || []);
       } catch (error) {
@@ -74,14 +58,6 @@ export const AnalyticsPage = () => {
   }, []);
 
   const slices = useMemo(() => {
-    const seededSlices = serverAnalytics?.demoAnalytics?.appBreakdown;
-    if (seededSlices && seededSlices.length > 0) {
-      return seededSlices.map((slice, i) => ({
-        label: slice.label,
-        pct: slice.pct,
-        color: PALETTE[i % PALETTE.length],
-      }));
-    }
 
     const apps = data.apps.length ? data.apps : ["instagram", "youtube", "others"];
     const weights = apps.map((_, i) => Math.max(0.5, 1 - i * 0.18));
@@ -91,7 +67,7 @@ export const AnalyticsPage = () => {
       pct: Math.round((weights[i] / totalW) * 100),
       color: PALETTE[i % PALETTE.length],
     }));
-  }, [data.apps, serverAnalytics]);
+  }, [data.apps]);
 
   const weeklyFocus = useMemo(() => {
     if (normalizedWeeklyHistory.length > 0) {
@@ -105,30 +81,14 @@ export const AnalyticsPage = () => {
       }));
     }
 
-    const seeded = serverAnalytics?.demoAnalytics?.weeklyFocus;
-    if (seeded && seeded.length > 0) {
-      const scores = seeded.map((entry) => entry.score);
-      const minScore = Math.min(...scores);
-      const maxScore = Math.max(...scores);
-      const range = Math.max(1, maxScore - minScore);
 
-      return seeded.map((entry) => ({
-        day: entry.day,
-        // Normalize last-7 scores so variation is visible in the bars.
-        score: Math.round(((entry.score - minScore) / range) * 100),
-      }));
-    }
+    return days.map((day, i) => ({ day, score: 0 }));
+  }, [focusScore, normalizedWeeklyHistory]);
 
-    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const today = (new Date().getDay() + 6) % 7;
-    const series = [40, 65, 50, 78, 45, 30, 60].map((b, i) => (i === today ? Math.max(b, focusScore) : b));
-    return days.map((day, i) => ({ day, score: series[i] }));
-  }, [focusScore, serverAnalytics, normalizedWeeklyHistory]);
-
-  const uiFocusScore = scoreOverview ? Math.round(scoreOverview.currentScore / 10) : serverAnalytics?.demoAnalytics?.focusScore ?? focusScore;
-  const uiSessions = serverAnalytics?.demoAnalytics?.metrics?.sessions ?? focusSessionsCompleted;
-  const uiActivities = serverAnalytics?.demoAnalytics?.metrics?.activities ?? completedActivities.length;
-  const uiHours = serverAnalytics?.demoAnalytics?.metrics?.hours ?? Number(screenTimeHours.toFixed(1));
+  const uiFocusScore = scoreOverview ? Math.round(scoreOverview.currentScore / 10) : focusScore;
+  const uiSessions = focusSessionsCompleted;
+  const uiActivities = completedActivities.length;
+  const uiHours = Number(screenTimeHours.toFixed(1));
 
   return (
     <main className="max-w-5xl mx-auto px-6 md:px-10 py-10 space-y-6">

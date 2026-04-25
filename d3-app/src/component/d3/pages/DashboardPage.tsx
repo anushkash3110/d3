@@ -31,20 +31,6 @@ export const DashboardPage = () => {
     focusSessionsPerDay?: Array<{ day: string; sessions: number }>;
     screenTimeTrend?: Array<{ day: string; hours: number }>;
     streakProgress?: Array<{ day: string; streak: number }>;
-    demoAnalytics?: {
-      focusScore?: number;
-      appBreakdown?: Array<{ label: string; minutes: number; pct: number }>;
-      weeklyFocus?: Array<{ day: string; score: number; date: string }>;
-      metrics?: {
-        sessions?: number;
-        activities?: number;
-        hours?: number;
-      };
-      controlScore?: {
-        currentScore?: number;
-        streakDays?: number;
-      };
-    };
   } | null>(null);
 
   const loadDashboardData = async () => {
@@ -81,12 +67,11 @@ export const DashboardPage = () => {
   }, []);
 
   const effectiveScreenHours =
-    analytics?.demoAnalytics?.metrics?.hours ??
-    (analytics?.metrics?.avgScreenTimeLast7Days !== undefined ? analytics.metrics.avgScreenTimeLast7Days / 60 : screenTimeHours);
-  const focusStreak = scoreOverview?.streak ?? analytics?.demoAnalytics?.controlScore?.streakDays ?? analytics?.metrics?.focusStreak ?? 0;
-  const effectiveFocusScore = scoreOverview ? Math.round(scoreOverview.currentScore / 10) : analytics?.demoAnalytics?.focusScore ?? focusScore;
+    analytics?.metrics?.avgScreenTimeLast7Days !== undefined ? analytics.metrics.avgScreenTimeLast7Days / 60 : screenTimeHours;
+  const focusStreak = scoreOverview?.streak ?? analytics?.metrics?.focusStreak ?? 0;
+  const effectiveFocusScore = scoreOverview ? Math.round(scoreOverview.currentScore / 10) : focusScore;
 
-  const screenBreakdown = analytics?.demoAnalytics?.appBreakdown || [];
+  const screenBreakdown = [] as any[];
   const topApps = screenBreakdown.length
     ? screenBreakdown.slice(0, 3).map((entry) => ({
         name: entry.label,
@@ -125,30 +110,19 @@ export const DashboardPage = () => {
             day: new Date(item.date).toLocaleDateString("en-US", { weekday: "short" }),
             sessions: Math.max(0, Math.round(item.score / 20)),
           }))
-        : (analytics?.demoAnalytics?.weeklyFocus || []).map((item) => ({
-            day: item.day,
-            sessions: Math.max(0, Math.round(item.score / 20)),
-        }));
+        : [];
 
   const screenTimeTrendData =
     analytics?.screenTimeTrend && analytics.screenTimeTrend.length > 0 && hasNonZeroScreenTrend
       ? analytics.screenTimeTrend
-      : (analytics?.demoAnalytics?.weeklyFocus || []).map((item) => ({
-          day: item.day,
-          hours: Number(((item.score / 100) * Math.max(0.8, effectiveScreenHours)).toFixed(1)),
-        }));
+      : [];
 
   const streakProgressData =
     analytics?.streakProgress && analytics.streakProgress.length > 0 && hasNonZeroStreakProgress
       ? analytics.streakProgress
-      : weeklyHistory.length > 0
-        ? weeklyHistory.map((item, idx) => ({
-            day: new Date(item.date).toLocaleDateString("en-US", { weekday: "short" }),
-            streak: idx + 1,
-          }))
-        : (analytics?.demoAnalytics?.weeklyFocus || []).map((item, idx) => ({
-            day: item.day,
-            streak: idx + 1,
+      : weeklyHistory.map((item) => ({
+          day: new Date(item.date).toLocaleDateString("en-US", { weekday: "short" }),
+          streak: 0,
         }));
 
   return (

@@ -196,8 +196,6 @@ export const BehavioralMirror: React.FC = () => {
                 
                 <div className="mt-6 text-sm text-muted-foreground flex items-center justify-center gap-2">
                   <span>Uses your real data</span>
-                  <span>·</span>
-                  <span>Powered by Claude AI</span>
                 </div>
               </CardContent>
             </Card>

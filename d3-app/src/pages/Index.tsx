@@ -162,6 +162,7 @@ const InnerApp = () => {
               },
               message: `You've been on ${response.intervention.triggerApp} for a while. Time for a reset.`,
               pomodoroMinutes: 25,
+              triggerApp: response.intervention.triggerApp,
             };
           });
           setIntervene(true);
@@ -276,7 +277,23 @@ const Index = () => {
   };
 
   useEffect(() => {
-    const syncAuth = () => setToken(localStorage.getItem("token"));
+    const syncAuth = () => {
+      const currentToken = localStorage.getItem("token");
+      setToken(currentToken);
+      if (!currentToken) {
+        localStorage.removeItem("d3.onboarding.v1");
+        setData(null);
+      } else {
+        const cached = localStorage.getItem("d3.onboarding.v1");
+        if (cached) {
+          try {
+            setData({ ...defaultOnboardingData, ...JSON.parse(cached) });
+          } catch {
+            setData(null);
+          }
+        }
+      }
+    };
     window.addEventListener("storage", syncAuth);
     window.addEventListener("d3-auth-changed", syncAuth as EventListener);
     return () => {

@@ -2,10 +2,6 @@ const FocusSession = require("../models/FocusSession");
 const JournalEntry = require("../models/JournalEntry");
 const ScreenTime = require("../models/ScreenTime");
 const User = require("../models/User");
-const DailyAggregate = require("../models/DailyAggregate");
-const ControlScore = require("../models/ControlScore");
-const Journal = require("../models/Journal");
-const Intervention = require("../models/Intervention");
 
 const safeNumber = (value) => (Number.isFinite(value) ? value : 0);
 
@@ -68,81 +64,7 @@ const getDashboardAnalytics = async (req, res) => {
       hours: screenMap.get(item.key) || 0,
     }));
 
-    // Seed-backed analytics for the Digital Dopamine Detox demo prompt.
-    const [dailyAggregates, controlScore, journalCountSeeded, recentInterventions] = await Promise.all([
-      DailyAggregate.find({ user: userId }).sort({ date: 1 }).limit(30),
-      ControlScore.findOne({ user: userId }),
-      Journal.countDocuments({ user: userId }),
-      Intervention.find({ user: userId }).sort({ date: -1 }).limit(30),
-    ]);
-
-    let demoAnalytics = null;
-    if (dailyAggregates.length > 0) {
-      const appTotals = {};
-      for (const day of dailyAggregates) {
-        const entries = day.appBreakdown instanceof Map ? Array.from(day.appBreakdown.entries()) : Object.entries(day.appBreakdown || {});
-        for (const [appName, minutes] of entries) {
-          appTotals[appName] = safeNumber(appTotals[appName]) + safeNumber(minutes);
-        }
-      }
-
-      const totalAppMinutes = Object.values(appTotals).reduce((sum, value) => sum + safeNumber(value), 0) || 1;
-      const appBreakdown = Object.entries(appTotals)
-        .map(([label, minutes]) => ({
-          label,
-          minutes: safeNumber(minutes),
-          pct: Math.round((safeNumber(minutes) / totalAppMinutes) * 100),
-        }))
-        .sort((a, b) => b.minutes - a.minutes);
-
-      const last7Days = dailyAggregates.slice(-7);
-      const avgHoursLast7 =
-        last7Days.length > 0
-          ? Number(
-              (last7Days.reduce((sum, day) => sum + safeNumber(day.totalMinutes), 0) / last7Days.length / 60).toFixed(1)
-            )
-          : 0;
-
-      const weeklyFocus = (controlScore?.history || []).slice(-7).map((entry) => {
-        const dateObj = new Date(entry.date);
-        return {
-          day: dateObj.toLocaleDateString("en-US", { weekday: "short" }),
-          score: safeNumber(entry.score),
-          date: entry.date,
-        };
-      });
-
-      const recentInterventionCount = recentInterventions.length;
-      const completedInterventionCount = recentInterventions.filter((item) => item.status === "completed").length;
-
-      demoAnalytics = {
-        focusScore: safeNumber(controlScore?.currentScore) ? Math.round(safeNumber(controlScore.currentScore) / 10) : 0,
-        controlScore: controlScore
-          ? {
-              currentScore: safeNumber(controlScore.currentScore),
-              level: controlScore.level,
-              streakDays: safeNumber(controlScore.streakDays),
-              longestStreakDays: safeNumber(controlScore.longestStreakDays),
-            }
-          : null,
-        appBreakdown,
-        weeklyFocus,
-        metrics: {
-          sessions: last7Days.reduce((sum, day) => sum + safeNumber(day.interventionsCompleted), 0),
-          activities: journalCountSeeded,
-          hours: avgHoursLast7,
-          interventionsTriggered: last7Days.reduce((sum, day) => sum + safeNumber(day.interventionsTriggered), 0),
-          interventionsCompleted: last7Days.reduce((sum, day) => sum + safeNumber(day.interventionsCompleted), 0),
-          recentInterventionCompletionRate:
-            recentInterventionCount > 0 ? Math.round((completedInterventionCount / recentInterventionCount) * 100) : 0,
-        },
-        totals: {
-          dailyAggregateCount: dailyAggregates.length,
-          journalCount: journalCountSeeded,
-          interventionCount: await Intervention.countDocuments({ user: userId }),
-        },
-      };
-    }
+    const demoAnalytics = null;
 
     return res.status(200).json({
       onboardingCompleted: user?.onboardingCompleted || false,

@@ -2,7 +2,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const dayjs = require("dayjs");
 const OnboardingProfile = require("../../../models/OnboardingProfile");
 const DailyAggregate = require("../../../models/DailyAggregate");
-const Journal = require("../../../models/Journal");
+const JournalEntry = require("../../../models/JournalEntry");
 const Intervention = require("../../../models/Intervention");
 const ControlScore = require("../../../models/ControlScore");
 
@@ -43,7 +43,7 @@ const buildUserContext = async (userId) => {
       "computedAddictionLevel mostDistractingApps dailyScreenTimeHours controlPlan"
     ),
     DailyAggregate.find({ user: userId }).sort({ date: 1 }).limit(30),
-    Journal.find({ user: userId }).sort({ date: 1 }).limit(28).select("date mood moodLabel responses tags"),
+    JournalEntry.find({ user: userId }).sort({ date: 1 }).limit(28).select("date mood moodLabel responses tags"),
     Intervention.find({
       user: userId,
       $or: [{ triggeredAt: { $gte: startDate } }, { createdAt: { $gte: startDate } }],

@@ -3,7 +3,7 @@ import { Button } from "@/component/ui/button";
 import { Input } from "@/component/ui/input";
 import { ChoiceCard } from "./ChoiceCard";
 import { useEffect, useState } from "react";
-import { ArrowRight, Lock, Mail, User } from "lucide-react";
+import { ArrowRight, Lock, Mail, User, Camera, Music, PlaySquare, Ghost, MessageCircle, MessageSquare, Users, Film } from "lucide-react";
 import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 
@@ -38,14 +38,14 @@ const STEPS = [
 ] as const;
 
 const APPS = [
-  { id: "instagram", name: "Instagram", emoji: "📷" },
-  { id: "tiktok", name: "TikTok", emoji: "🎵" },
-  { id: "youtube", name: "YouTube", emoji: "▶️" },
-  { id: "snapchat", name: "Snapchat", emoji: "👻" },
-  { id: "x", name: "X / Twitter", emoji: "✕" },
-  { id: "reddit", name: "Reddit", emoji: "🟧" },
-  { id: "facebook", name: "Facebook", emoji: "📘" },
-  { id: "netflix", name: "Netflix", emoji: "🎬" },
+  { id: "instagram", name: "Instagram", icon: <Camera className="h-5 w-5 text-pink-500" /> },
+  { id: "tiktok", name: "TikTok", icon: <Music className="h-5 w-5 text-indigo-500" /> },
+  { id: "youtube", name: "YouTube", icon: <PlaySquare className="h-5 w-5 text-red-500" /> },
+  { id: "snapchat", name: "Snapchat", icon: <Ghost className="h-5 w-5 text-yellow-600 dark:text-yellow-400" /> },
+  { id: "x", name: "X / Twitter", icon: <MessageCircle className="h-5 w-5 text-sky-500" /> },
+  { id: "reddit", name: "Reddit", icon: <MessageSquare className="h-5 w-5 text-orange-500" /> },
+  { id: "facebook", name: "Facebook", icon: <Users className="h-5 w-5 text-blue-500" /> },
+  { id: "netflix", name: "Netflix", icon: <Film className="h-5 w-5 text-red-500" /> },
 ];
 
 const MODES = [
@@ -495,7 +495,7 @@ export const Onboarding = ({ onComplete }: { onComplete: (data: OnboardingData) 
             <ChoiceCard
               key={a.id}
               label={a.name}
-              icon={<span>{a.emoji}</span>}
+              icon={a.icon}
               selected={data.apps.includes(a.id)}
               onClick={() => toggle(a.id)}
             />
