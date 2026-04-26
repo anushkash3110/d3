@@ -31,11 +31,19 @@ const defaultOnboardingData: OnboardingData = {
   mode: "",
 };
 
+
+
+
+
+
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const token = localStorage.getItem("token");
   if (!token) return <Navigate to="/" replace />;
   return children;
 };
+
+
+
 
 const DISTRACTING_ROUTES = new Set(["/dashboard", "/activities", "/analytics", "/blocking", "/reflection"]);
 const MODE_INTERACTION_THRESHOLD: Record<"easy" | "moderate" | "extreme", number> = {
