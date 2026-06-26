@@ -7,8 +7,8 @@ const Intervention = require("../../../models/Intervention");
 const ControlScore = require("../../../models/ControlScore");
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const PRIMARY_MODEL = "claude-opus-4-6";
-const FALLBACK_MODEL = "claude-3-5-sonnet-latest";
+const PRIMARY_MODEL = "claude-3-5-sonnet-latest";
+const FALLBACK_MODEL = "claude-3-5-haiku-latest";
 
 const NEGATIVE_WORDS = [
   "anxious",

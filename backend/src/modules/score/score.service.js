@@ -111,7 +111,13 @@ const recalculateScore = async (userId, date) => {
 
   const reasonSummary = reasons.length ? reasons.join(", ") : "No qualifying score events";
   const historyEntry = { date: scoreDate, score: newScore, delta: Math.round(delta), reason: reasonSummary };
-  controlScore.history.push(historyEntry);
+  
+  const existingIndex = controlScore.history.findIndex((entry) => entry.date === scoreDate);
+  if (existingIndex >= 0) {
+    controlScore.history[existingIndex] = historyEntry;
+  } else {
+    controlScore.history.push(historyEntry);
+  }
 
   controlScore.currentScore = newScore;
   controlScore.level = newLevel.name;

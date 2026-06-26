@@ -12,10 +12,11 @@ const connectDB = async () => {
     const parsed = new URL(uri);
     console.log(`[DB] Connecting to host: ${parsed.hostname} ...`);
   } catch {
-    throw new Error(`MONGO_URI is malformed — cannot parse as a URL. Value starts with: ${uri.slice(0, 20)}...`);
+    console.log("[DB] Connecting to database (URI hostname could not be parsed for logging) ...");
   }
 
   await mongoose.connect(uri, {
+    dbName: "d3_detox",
     serverSelectionTimeoutMS: 15000, // 15s — enough for Atlas cold start
     socketTimeoutMS: 45000,
     connectTimeoutMS: 15000,
